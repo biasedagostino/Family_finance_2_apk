@@ -1,0 +1,6 @@
+{
+  "name": "Portale Finanziario",
+  "description": "Portale Finanziario Familiare offline con gestione budget, risparmi e analisi BI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

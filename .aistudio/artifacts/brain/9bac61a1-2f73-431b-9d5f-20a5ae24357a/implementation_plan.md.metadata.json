@@ -1,0 +1,6 @@
+{
+  "summary":  "Piano d'implementazione per applicare la regola esplicita di calcolo del Fondo Risparmio: ogni Spesa su categoria Risparmio incrementa il fondo (+), ogni Entrata su categoria Risparmio sottrae dal fondo (-).",
+  "updatedAt":  "2026-10-05T10:21:07.166512639Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
