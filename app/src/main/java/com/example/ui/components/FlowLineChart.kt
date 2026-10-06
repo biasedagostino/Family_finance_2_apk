@@ -58,19 +58,21 @@ fun FlowLineChart(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Legend Row (matching screenshot)
+            // Legend Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 LegendSquare(color = IncomeGreen, label = "Entrata")
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 LegendSquare(color = ExpenseRed, label = "Spesa")
-                Spacer(modifier = Modifier.width(10.dp))
-                LegendSquare(color = DifferenceBlue, label = "Differenza")
-                Spacer(modifier = Modifier.width(10.dp))
-                LegendSquare(color = Color(0xFFF59E0B), label = "Trend Anno Prec.", isDashed = true)
+                Spacer(modifier = Modifier.width(8.dp))
+                LegendSquare(color = DifferenceBlue, label = "Diff.")
+                Spacer(modifier = Modifier.width(8.dp))
+                LegendSquare(color = PrimaryViolet, label = "Saldo")
+                Spacer(modifier = Modifier.width(8.dp))
+                LegendSquare(color = Color(0xFFF59E0B), label = "Trend Prec.", isDashed = true)
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -108,6 +110,11 @@ fun FlowLineChart(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text("Differenza: ${formatVal(p.difference)}", color = Color.White, fontSize = 11.sp)
                             }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(8.dp).background(PrimaryViolet))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Saldo: ${formatVal(p.balance)}", color = Color.White, fontSize = 11.sp)
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(10.dp))
@@ -122,9 +129,9 @@ fun FlowLineChart(
                     Text("Nessun dato disponibile per il flusso mensile", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                val maxVal = flowPoints.flatMap { listOf(it.income, it.expense, it.difference, it.prevYearTrend) }
+                val maxVal = flowPoints.flatMap { listOf(it.income, it.expense, it.difference, it.prevYearTrend, it.balance) }
                     .maxOrNull()?.coerceAtLeast(100.0) ?: 350.0
-                val minVal = flowPoints.flatMap { listOf(it.income, it.expense, it.difference, it.prevYearTrend) }
+                val minVal = flowPoints.flatMap { listOf(it.income, it.expense, it.difference, it.prevYearTrend, it.balance) }
                     .minOrNull()?.coerceAtMost(-50.0) ?: -100.0
                 val range = (maxVal - minVal).coerceAtLeast(1.0)
 
@@ -205,6 +212,7 @@ fun FlowLineChart(
                         drawCubicLine({ it.income }, IncomeGreen, 2.5f)
                         drawCubicLine({ it.expense }, ExpenseRed, 2.5f)
                         drawCubicLine({ it.difference }, DifferenceBlue, 2.5f)
+                        drawCubicLine({ it.balance }, PrimaryViolet, 2.5f)
                         drawCubicLine({ it.prevYearTrend }, Color(0xFFF59E0B), 2f, isDashed = true)
                     }
                 }

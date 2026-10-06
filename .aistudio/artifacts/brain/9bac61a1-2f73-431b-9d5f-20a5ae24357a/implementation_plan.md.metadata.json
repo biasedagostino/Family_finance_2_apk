@@ -1,6 +1,6 @@
 {
-  "summary":  "Piano d'implementazione per applicare la regola esplicita di calcolo del Fondo Risparmio: ogni Spesa su categoria Risparmio incrementa il fondo (+), ogni Entrata su categoria Risparmio sottrae dal fondo (-).",
-  "updatedAt":  "2026-10-05T10:21:07.166512639Z",
+  "summary":  "Piano d'implementazione per: 1) Formattazione delle etichette dei mesi sotto al grafico in notazione MM/YY (es. 10/26); 2) Aggiunta della linea del Saldo Cumulativo (con colore dedicato Viola/Teal e legenda) nel grafico del Flusso Mensile Personale.",
+  "updatedAt":  "2026-10-06T06:42:20.792228391Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

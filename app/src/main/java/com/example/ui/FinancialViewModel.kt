@@ -21,7 +21,8 @@ data class MonthlyFlowPoint(
     val income: Double,
     val expense: Double,
     val difference: Double,
-    val prevYearTrend: Double
+    val prevYearTrend: Double,
+    val balance: Double = 0.0
 )
 
 data class CategoryAggregate(
@@ -69,10 +70,10 @@ data class UiState(
     val nextSalaryDateDisplay: String = "07/11/2026",
 
     // Savings Metrics
-    val initialSavings: Double = 7100.0,
+    val initialSavings: Double = 0.0,
     val totalSavingsDeposits: Double = 0.0,
     val totalSavingsWithdrawals: Double = 0.0,
-    val currentSavingsFund: Double = 7100.0,
+    val currentSavingsFund: Double = 0.0,
     val savingsMovements: List<TransactionEntity> = emptyList(),
 
     // Personal Budget Metrics
@@ -241,30 +242,27 @@ class FinancialViewModel(application: Application) : AndroidViewModel(applicatio
         val futureScheduledThisMonth = txs.filter { it.isFuture && it.date.startsWith(selectedMonth) && it.type.equals("Spesa", ignoreCase = true) }.sumOf { it.amount }
         val predictedMonthlyExpenses = currentMonthExpenses + futureScheduledThisMonth
 
-        // Savings Fund Calculation (Fixed to baseline 7.100,00 €)
-        val defaultSavingsCats = setOf(
-            "Buono posta RisparmioSemplice", "Buono Postale su conto", "Buono postale Gianky",
-            "Buono postale Luciano", "Fondo Gimme5", "Fondo Revolut", "Fondo Satispay",
-            "Fondo Trade Replublic", "Posta Progetto Capitale", "Sblocco buoni postali",
-            "Sblocco buono RisparmioSemplice", "Sblocco fondo pensione"
-        )
+        // Savings Fund Calculation (Explicit user rule)
+        // 1. Determine savings categories
         val settingsSavingsCats = settings["Categorie Risparmio"]?.split("|")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
         val dbSavingsCats = cats.filter { it.useForSavings }.map { it.name }.toSet()
-        val savingsCategoryNames = defaultSavingsCats + settingsSavingsCats + dbSavingsCats
+        val savingsCategoryNames = settingsSavingsCats + dbSavingsCats
 
-        val initialSavings = settings["Risparmio Iniziale"]?.toDoubleOrNull() ?: 7100.0
-        val initialSavingsDate = settings["Data Iniziale Risparmio"] ?: "2026-10-05"
+        val initialSavings = settings["Risparmio Iniziale"]?.toDoubleOrNull() ?: 0.0
 
-        // Only include completed non-future transactions strictly AFTER the initial savings baseline date
+        // 2. Realized completed movements on savings categories
         val savingsMovements = txs.filter {
             !it.isFuture &&
-            it.date > initialSavingsDate &&
             it.date <= todayIso &&
             savingsCategoryNames.contains(it.category)
         }
 
+        // Spesa on a savings category -> Increases savings (+ totalDeposits)
         val totalDeposits = savingsMovements.filter { it.type.equals("Spesa", ignoreCase = true) }.sumOf { it.amount }
+
+        // Entrata on a savings category -> Decreases savings (- totalWithdrawals)
         val totalWithdrawals = savingsMovements.filter { it.type.equals("Entrata", ignoreCase = true) }.sumOf { it.amount }
+
         val currentSavingsFund = initialSavings + totalDeposits - totalWithdrawals
 
         // Personal Budget
@@ -383,17 +381,28 @@ class FinancialViewModel(application: Application) : AndroidViewModel(applicatio
             }.sortedByDescending { it.amount }
 
         // Personal Flow (Exactly Last 12 Months ending at Current Month)
-        val monthlyPersonalAllocation = personalAllocation / 12.0
+        var runningPersonalBal = 0.0
         val personalFlow = last12MonthsList.map { ymKey ->
-            val pdMonth = pds.filter { it.date.startsWith(ymKey) }
-            val exp = pdMonth.sumOf { it.amount }
+            val inc = txs.filter { !it.isFuture && it.date.startsWith(ymKey) && it.category.equals(personalCat, ignoreCase = true) }.sumOf { it.amount }
+            val exp = pds.filter { it.date.startsWith(ymKey) }.sumOf { it.amount }
+            val diff = inc - exp
+            runningPersonalBal += diff
+
+            val prevYearKey = try {
+                val parts = ymKey.split("-")
+                "${parts[0].toInt() - 1}-${parts[1]}"
+            } catch (e: Exception) { "" }
+
+            val prevExp = pds.filter { it.date.startsWith(prevYearKey) }.sumOf { it.amount }
+
             MonthlyFlowPoint(
                 monthLabel = formatMonthLabel(ymKey),
                 yearMonthKey = ymKey,
-                income = monthlyPersonalAllocation,
+                income = inc,
                 expense = exp,
-                difference = monthlyPersonalAllocation - exp,
-                prevYearTrend = 0.0
+                difference = diff,
+                prevYearTrend = prevExp,
+                balance = runningPersonalBal
             )
         }
 
@@ -596,9 +605,6 @@ class FinancialViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val formattedVal = if (key.lowercase().contains("stipendio") || key.lowercase().contains("data")) DateUtils.displayToIso(value) else value
             repository.saveSetting(key, formattedVal)
-            if (key == "Risparmio Iniziale") {
-                repository.saveSetting("Data Iniziale Risparmio", "2026-10-05")
-            }
             Toast.makeText(getApplication(), "Impostazione salvata!", Toast.LENGTH_SHORT).show()
         }
     }
@@ -621,15 +627,143 @@ class FinancialViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun saveCsvToDownloads(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val csvString = repository.exportCsvString()
+                val filename = "portale_finanziario_backup.csv"
+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    val values = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                        put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+                        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                    }
+
+                    val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    if (uri != null) {
+                        context.contentResolver.openOutputStream(uri)?.use { stream ->
+                            stream.write(csvString.toByteArray())
+                        }
+                        launch(Dispatchers.Main) {
+                            Toast.makeText(context, "File salvato in Download ($filename)!", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        saveToExternalFiles(context, csvString, filename)
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                    if (!downloadsDir.exists()) downloadsDir.mkdirs()
+                    val file = java.io.File(downloadsDir, filename)
+                    file.writeText(csvString)
+                    launch(Dispatchers.Main) {
+                        Toast.makeText(context, "File salvato in Download: ${file.name}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                saveToExternalFiles(context, repository.exportCsvString(), "portale_finanziario_backup.csv")
+            }
+        }
+    }
+
+    private fun saveToExternalFiles(context: Context, content: String, filename: String) {
+        try {
+            val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+            if (!dir.exists()) dir.mkdirs()
+            val file = java.io.File(dir, filename)
+            file.writeText(content)
+            viewModelScope.launch(Dispatchers.Main) {
+                Toast.makeText(context, "File salvato nella memoria locale dell'app!", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            viewModelScope.launch(Dispatchers.Main) {
+                Toast.makeText(context, "Errore salvataggio locale: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun shareCsv(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val csvString = repository.exportCsvString()
+                val file = java.io.File(context.cacheDir, "portale_finanziario_backup.csv")
+                file.writeText(csvString)
+
+                val contentUri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+
+                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/csv"
+                    putExtra(android.content.Intent.EXTRA_STREAM, contentUri)
+                    putExtra(android.content.Intent.EXTRA_SUBJECT, "Backup Portale Finanziario Familiare")
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                launch(Dispatchers.Main) {
+                    val chooser = android.content.Intent.createChooser(shareIntent, "Condividi / Salva Backup CSV")
+                    chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(chooser)
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Errore nella condivisione: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    fun copyCsvToClipboard(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val csvString = repository.exportCsvString()
+                launch(Dispatchers.Main) {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("Backup CSV Finanziario", csvString)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(context, "Dati CSV copiati negli appunti!", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Errore nella copia: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     fun importCsvFromUri(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val csvContent = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                if (!csvContent.isNullOrEmpty()) {
-                    repository.importCsvString(csvContent)
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {}
+
+                val inputStream = context.contentResolver.openInputStream(uri)
+                if (inputStream == null) {
                     launch(Dispatchers.Main) {
-                        Toast.makeText(context, "File CSV importato con successo!", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Impossibile aprire il file selezionato.", Toast.LENGTH_SHORT).show()
                     }
+                    return@launch
+                }
+
+                val csvContent = inputStream.bufferedReader().use { it.readText() }
+                if (csvContent.isBlank()) {
+                    launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Il file selezionato è vuoto.", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val count = repository.importCsvString(csvContent)
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Importazione completata con successo ($count elementi)!", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 launch(Dispatchers.Main) {
@@ -639,13 +773,68 @@ class FinancialViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun importCsvContent(context: Context, csvContent: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (csvContent.isBlank()) {
+                    launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Nessun testo da importare.", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+                val count = repository.importCsvString(csvContent)
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Importazione completata con successo ($count elementi)!", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Errore nell'importazione: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    fun importFromDownloadedFile(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val appDownloadDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val appFile = appDownloadDir?.let { java.io.File(it, "portale_finanziario_backup.csv") }
+
+                @Suppress("DEPRECATION")
+                val publicDownloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val publicFile = java.io.File(publicDownloadDir, "portale_finanziario_backup.csv")
+
+                val fileToRead = when {
+                    appFile != null && appFile.exists() && appFile.length() > 0 -> appFile
+                    publicFile.exists() && publicFile.length() > 0 -> publicFile
+                    else -> null
+                }
+
+                if (fileToRead != null) {
+                    val content = fileToRead.readText()
+                    val count = repository.importCsvString(content)
+                    launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Importato da Download (${fileToRead.name}): $count elementi!", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Nessun file 'portale_finanziario_backup.csv' trovato nella cartella Download.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Errore importazione locale: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     private fun formatMonthLabel(ymKey: String): String {
         return try {
             val parts = ymKey.split("-")
-            val monthNames = arrayOf("gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic")
-            val mIdx = parts[1].toInt() - 1
+            val month = parts[1]
             val yearShort = parts[0].takeLast(2)
-            "${monthNames[mIdx]} $yearShort"
+            "$month/$yearShort"
         } catch (e: Exception) {
             ymKey
         }

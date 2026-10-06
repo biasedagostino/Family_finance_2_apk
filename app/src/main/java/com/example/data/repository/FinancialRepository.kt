@@ -40,17 +40,24 @@ class FinancialRepository(private val db: AppDatabase) {
         CsvEngine.build(cats, txs, pds, sts)
     }
 
-    suspend fun importCsvString(csvContent: String) = withContext(Dispatchers.IO) {
+    suspend fun importCsvString(csvContent: String): Int = withContext(Dispatchers.IO) {
         val parsed = CsvEngine.parse(csvContent)
+        if (parsed.categories.isEmpty() && parsed.transactions.isEmpty() && parsed.personalDetails.isEmpty()) {
+            throw IllegalArgumentException("Il file non contiene dati finanziari validi.")
+        }
         db.categoryDao().deleteAll()
         db.transactionDao().deleteAll()
         db.personalDetailDao().deleteAll()
-        db.settingDao().deleteAll()
+        if (parsed.settings.isNotEmpty()) {
+            db.settingDao().deleteAll()
+            db.settingDao().insertAll(parsed.settings)
+        }
 
         db.categoryDao().insertAll(parsed.categories)
         db.transactionDao().insertAll(parsed.transactions)
         db.personalDetailDao().insertAll(parsed.personalDetails)
-        db.settingDao().insertAll(parsed.settings)
+
+        parsed.transactions.size + parsed.personalDetails.size
     }
 
     suspend fun addCategory(category: CategoryEntity) = withContext(Dispatchers.IO) {

@@ -9,9 +9,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,14 +49,20 @@ fun SettingsScreen(
     var newCategoryName by remember { mutableStateOf("") }
     var newCategoryType by remember { mutableStateOf("Spesa") }
 
-    // System File Pickers (SAF)
+    // System File Pickers (SAF & Content)
     val createCsvLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/csv")
+        contract = ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
         uri?.let { viewModel.exportCsvToUri(context, it) }
     }
 
-    val openCsvLauncher = rememberLauncherForActivityResult(
+    val openDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { viewModel.importCsvFromUri(context, it) }
+    }
+
+    val getContentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let { viewModel.importCsvFromUri(context, it) }
@@ -155,7 +165,54 @@ fun SettingsScreen(
             }
         }
 
-        // Direct CSV File Import / Export (Storage Access Framework)
+        // Sicurezza & Biometria Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Sicurezza & Protezione Biometrica",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Richiedi l'autenticazione biometrica (impronta digitale, riconoscimento facciale o PIN/Sequenza del dispositivo) all'avvio dell'applicazione per proteggere i tuoi dati finanziari.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    val isBiometricEnabled = (uiState.settings["Protezione Biometrica"] ?: "false").toBoolean()
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Protezione all'Avvio App",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Switch(
+                            checked = isBiometricEnabled,
+                            onCheckedChange = { isChecked ->
+                                viewModel.saveSetting("Protezione Biometrica", isChecked.toString())
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Direct CSV File Import / Export (Storage Access Framework & Share Fallback)
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -173,37 +230,116 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Salva o carica direttamente un file .csv dal dispositivo utilizzando il selettore di file di sistema Android.",
+                        text = "Esporta i tuoi dati in formato .csv o importa un file di backup precedente in totale sicurezza.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
+                    // Selettori di sistema primari (SAF)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
                             onClick = {
-                                createCsvLauncher.launch("portale_finanziario_backup.csv")
+                                try {
+                                    createCsvLauncher.launch("portale_finanziario_backup.csv")
+                                } catch (e: Exception) {
+                                    android.widget.Toast.makeText(context, "Apertura selettore non riuscita: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryViolet)
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Salva File CSV", fontSize = 11.sp)
+                            Text("Esporta (Scegli Posizione)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                try {
+                                    openDocumentLauncher.launch(arrayOf("*/*", "text/*", "text/csv"))
+                                } catch (_: Exception) {
+                                    try {
+                                        getContentLauncher.launch("*/*")
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(context, "Selettore non disponibile: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryViolet)
+                        ) {
+                            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Importa (Scegli File)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Scorciatoie locali
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.saveCsvToDownloads(context) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Salva Rapido in Download", fontSize = 10.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { viewModel.importFromDownloadedFile(context) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Importa da Download", fontSize = 10.sp)
+                        }
+                    }
+
+                    // Condivisione e Appunti
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.shareCsv(context) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Condividi File CSV", fontSize = 11.sp)
                         }
 
                         OutlinedButton(
                             onClick = {
-                                openCsvLauncher.launch("*/*")
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()
+                                if (!clipText.isNullOrBlank()) {
+                                    viewModel.importCsvContent(context, clipText)
+                                } else {
+                                    android.widget.Toast.makeText(context, "Nessun testo trovato negli appunti.", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Carica File CSV", fontSize = 11.sp)
+                            Text("Incolla da Appunti", fontSize = 11.sp)
                         }
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.copyCsvToClipboard(context) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Copia Testo CSV negli Appunti", fontSize = 11.sp)
                     }
                 }
             }

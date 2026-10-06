@@ -27,12 +27,12 @@ fun AnalyticsScreen(
     modifier: Modifier = Modifier
 ) {
     val dateFilter by viewModel.biDateFilter.collectAsState()
-    val filterOptions = listOf("Mese Corrente", "3 Mesi", "6 Mesi", "YTD", "Tutto")
+    val filterOptions = listOf("MTD", "3 Mesi", "6 Mesi", "YTD", "Tutto")
 
     val filteredTxs = remember(uiState.transactions, dateFilter) {
         val nonFuture = uiState.transactions.filter { !it.isFuture }
         when (dateFilter) {
-            "Mese Corrente" -> nonFuture.filter { it.date.startsWith(uiState.selectedMonthKey) }
+            "MTD" -> nonFuture.filter { it.date.startsWith(uiState.selectedMonthKey) }
             "3 Mesi" -> nonFuture.filter { it.date >= "2026-08-01" }
             "6 Mesi" -> nonFuture.filter { it.date >= "2026-05-01" }
             "YTD" -> nonFuture.filter { it.date.startsWith("2026") }
@@ -168,7 +168,7 @@ fun AnalyticsScreen(
                         )
                         Text(
                             text = "rispetto allo stesso mese anno prec.",
-                            fontSize = 8.sp,
+                            fontSize = 7.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

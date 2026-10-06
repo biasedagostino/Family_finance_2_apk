@@ -197,7 +197,7 @@ fun DashboardScreen(
         // --- 3. Card Previsione Spese Mensili (Collapsible Closed by default) ---
         item {
             CollapsibleCard(
-                title = "Previsione Spese & Scadenze Mensili BI",
+                title = "Previsione Spese Mensili BI",
                 subtitle = "Calcolo reattivo in tempo reale basato sulle scadenze programmate.",
                 containerColor = Color(0xFF1E1B4B),
                 initialExpanded = false
@@ -248,13 +248,22 @@ fun DashboardScreen(
                         singleLine = true
                     )
 
+                    val filteredCategories = remember(uiState.categories, selectedType) {
+                        uiState.categories.filter { it.type.equals(selectedType, ignoreCase = true) }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         FilterChip(
                             selected = selectedType == "Spesa",
-                            onClick = { selectedType = "Spesa" },
+                            onClick = {
+                                if (selectedType != "Spesa") {
+                                    selectedType = "Spesa"
+                                    selectedCategory = ""
+                                }
+                            },
                             label = { Text("Spesa") },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = ExpenseRed,
@@ -264,7 +273,12 @@ fun DashboardScreen(
                         )
                         FilterChip(
                             selected = selectedType == "Entrata",
-                            onClick = { selectedType = "Entrata" },
+                            onClick = {
+                                if (selectedType != "Entrata") {
+                                    selectedType = "Entrata"
+                                    selectedCategory = ""
+                                }
+                            },
                             label = { Text("Entrata") },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = IncomeGreen,
@@ -281,20 +295,27 @@ fun DashboardScreen(
                             onClick = { dropdownExpanded = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(selectedCategory.ifEmpty { "Seleziona una categoria" })
+                            Text(selectedCategory.ifEmpty { "Seleziona una categoria (${selectedType})" })
                         }
                         DropdownMenu(
                             expanded = dropdownExpanded,
                             onDismissRequest = { dropdownExpanded = false }
                         ) {
-                            uiState.categories.forEach { cat ->
+                            if (filteredCategories.isEmpty()) {
                                 DropdownMenuItem(
-                                    text = { Text(cat.name) },
-                                    onClick = {
-                                        selectedCategory = cat.name
-                                        dropdownExpanded = false
-                                    }
+                                    text = { Text("Nessuna categoria per $selectedType") },
+                                    onClick = { dropdownExpanded = false }
                                 )
+                            } else {
+                                filteredCategories.forEach { cat ->
+                                    DropdownMenuItem(
+                                        text = { Text(cat.name) },
+                                        onClick = {
+                                            selectedCategory = cat.name
+                                            dropdownExpanded = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

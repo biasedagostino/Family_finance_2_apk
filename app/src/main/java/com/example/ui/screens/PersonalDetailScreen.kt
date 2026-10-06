@@ -143,6 +143,11 @@ fun PersonalDetailScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
+                            Text(
+                                text = "residuo contanti",
+                                fontSize = 8.sp,
+                                color = Color(0xFFFDE68A)
+                            )
                         }
                     }
 
@@ -232,6 +237,10 @@ fun PersonalDetailScreen(
                         singleLine = true
                     )
 
+                    val expenseCategories = remember(uiState.categories) {
+                        uiState.categories.filter { it.type.equals("Spesa", ignoreCase = true) }
+                    }
+
                     Text("Categoria:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                     var dropdownExpanded by remember { mutableStateOf(false) }
                     Box(modifier = Modifier.fillMaxWidth()) {
@@ -239,20 +248,27 @@ fun PersonalDetailScreen(
                             onClick = { dropdownExpanded = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(selectedCategory.ifEmpty { "Seleziona Categoria" })
+                            Text(selectedCategory.ifEmpty { "Seleziona Categoria (Spesa)" })
                         }
                         DropdownMenu(
                             expanded = dropdownExpanded,
                             onDismissRequest = { dropdownExpanded = false }
                         ) {
-                            uiState.categories.forEach { cat ->
+                            if (expenseCategories.isEmpty()) {
                                 DropdownMenuItem(
-                                    text = { Text(cat.name) },
-                                    onClick = {
-                                        selectedCategory = cat.name
-                                        dropdownExpanded = false
-                                    }
+                                    text = { Text("Nessuna categoria di spesa disponibile") },
+                                    onClick = { dropdownExpanded = false }
                                 )
+                            } else {
+                                expenseCategories.forEach { cat ->
+                                    DropdownMenuItem(
+                                        text = { Text(cat.name) },
+                                        onClick = {
+                                            selectedCategory = cat.name
+                                            dropdownExpanded = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
